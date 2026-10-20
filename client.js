@@ -400,6 +400,9 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 命令超时的哨兵值（用 Symbol 是为了不会和宿主返回的任何结果撞上）。 */
+    const TIMEOUT = Symbol('step-fold-timeout')
+
     /**
      * 把错误文案压成一句人话：宿主给的是 `{ ok, error }`，可能是英文、
      * 可能带错误码，直接亮给用户太吵。这里只截第一行。
@@ -445,11 +448,19 @@ window.__ModuleLoader__.load({
                   if (typeof sessionId !== 'string' || sessionId === '') return '当前没有会话'
                   let result
                   try {
-                    result = await ctx.remote.commands.execute(sessionId, `/stepfold ${mode}`, [])
+                    // 命令是走宿主会话通道的，万一那条通道断了，promise 会一直挂着，
+                    // 按钮就永远停在禁用状态。所以加个超时兜底。
+                    result = await Promise.race([
+                      ctx.remote.commands.execute(sessionId, `/stepfold ${mode}`, []),
+                      new Promise((resolve) => {
+                        setTimeout(() => resolve(TIMEOUT), 5000)
+                      }),
+                    ])
                   } catch (reason) {
                     // 命令通道本身没连上（宿主重启中、连接断了）
                     return shortReason(reason) || '连不上宿主'
                   }
+                  if (result === TIMEOUT) return '宿主没回应（命令超时）'
                   if (result === undefined || result === null) return '连不上宿主'
                   if (!result.ok) return shortReason(result.error && result.error.message) || '命令被拒绝'
                   if (result.value === undefined) return '宿主不认识这个挡位命令（host 半边没加载？）'
