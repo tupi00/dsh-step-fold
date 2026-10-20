@@ -1,12 +1,11 @@
 /**
- * StepFold 的 host 半边：协作挡位（只回答 / 分步骤 / 无限制）。
+ * StepFold 的 host 半边：协作挡位（只回答 / 无限制）。
  *
  * 为什么要有挡位：AI 接到一句话就埋头干活，中途看不到它想干什么，跑偏了只能等它
  * 跑完再回头。挡位把「这一轮它能做到哪一步」变成用户按得动的一个开关：
  *
  *   只回答 —— 只能读、搜、看网页；写文件、跑命令、派子代理一律拦下来，
  *             把该说的说清楚，别动手。（拦在 tools.guard 里，模型绕不过去）
- *   分步骤 —— 动手前先报 3–6 条计划，然后一路做完，中途用户随时可以打断。
  *   无限制 —— 和没装这个插件一样（默认）。
  *
  * 状态存哪：不存插件内存。挡位的每一次切换都通过 /stepfold 命令完成，命令的
@@ -19,10 +18,19 @@
  * 写进去的会话下次可能打不开。折命令事件是零风险的写法。
  */
 
-/** 三个挡位的内部名。改名字要连投影的 stateVersion 一起升。 */
+/** 挡位的内部名。改名字要连投影的 stateVersion 一起升。 */
 const MODE_ANSWER = 'answer'
-const MODE_STEPS = 'steps'
 const MODE_FREE = 'free'
+
+/**
+ * 只留两档：只回答、无限制。
+ *
+ * 中间那档（「分步骤」：先报计划再一路做完）做过一版又拆了——它要求模型在轮次
+ * 开头列 3–6 条计划，但拦不住「一条路跑四十分钟」这个真正让人烦的问题：
+ * 计划列完照样埋头干，用户还是只能等。想解决得靠「跑满多少步就强制停下汇报」
+ * 那种预算机制，而那个机制的成本和打断感还没谈清楚。想法记在
+ * `F:\DSH产出\docs\TODO.md` 的「中间档位」条下，想清楚再回来做。
+ */
 
 /** 默认挡位：无限制，也就是「和没装这个插件一样」。 */
 const DEFAULT_MODE = MODE_FREE
@@ -30,11 +38,10 @@ const DEFAULT_MODE = MODE_FREE
 /** 挡位的中文名，用在命令回执和界面上。 */
 const MODE_LABEL = {
   [MODE_ANSWER]: '只回答',
-  [MODE_STEPS]: '分步骤',
   [MODE_FREE]: '无限制',
 }
 
-/** 用户敲的命令名：/stepfold answer|steps|free（也认 1/2/3 和中文）。 */
+/** 用户敲的命令名：/stepfold answer|free（也认 1/2 和中文）。 */
 const COMMAND_NAME = 'stepfold'
 
 /** 投影的 key 与版本。字段或折叠规则变了就把版本 +1，旧的检查点会自动作废。 */
@@ -95,22 +102,11 @@ const ANSWER_TEXT = [
   '这一轮你只负责回答，不要动手：不写文件、不改文件、不运行命令、不派子代理、不改目标。',
   '需要核对事实时可以用只读工具：读文件、按内容搜索、看网页。',
   '如果用户真正要的是「去做」而不是「说清楚」，就在回答里把方案讲明白，',
-  '并提醒他把输入框上方的挡位切到「分步骤」或「无限制」再让你开工。',
-].join('\n')
-
-/** 分步骤挡位里，模型会看到的说明。 */
-const STEPS_TEXT = [
-  '【当前挡位：分步骤】这一轮的**回答格式**是硬性要求，不是建议：',
-  '1. 回答的第一个字就要开始列计划：把这一轮打算做的 3–6 件事写出来，每条一句话，带上要改的文件名或模块名，不贴代码。',
-  '2. 列完直接一路做完，不要停下来等用户逐条批准——用户会在这期间随时打断或改方向。',
-  '3. 只说明情况、不需要动手的一轮，就写一行「这轮不需要动手」，然后直接回答。',
-  '4. 做完简要说明改了哪几处、怎么验证的。',
-  '5. 干到一半发现计划里没写、但必须做的事：**能撤销的**（多改一个文件、多跑一次测试、下载到临时目录）先用一句话说明「计划外多一步：要做什么、为什么」，然后接着做，不要停下来等批准。',
-  '6. **不能撤销或有副作用的**（装全局包、改系统配置、删目录、强制推送、花钱）：先停下来说明原因，等用户点头再做。',
+  '并提醒他把输入框上方的挡位切到「无限制」再让你开工。',
 ].join('\n')
 
 /** 命令回执里给的用法提示。 */
-const USAGE = '用法：/stepfold answer（只回答）| steps（分步骤）| free（无限制），也可以写 1 / 2 / 3。'
+const USAGE = '用法：/stepfold answer（只回答）| free（无限制），也可以写 1 / 2。'
 
 /**
  * 一个「什么都不校验」的 schema。
@@ -125,15 +121,16 @@ const PASSTHROUGH_SCHEMA = { parse: (value) => value }
 /**
  * 把用户写的东西认成挡位。
  *
- * 认三种写法：英文名、数字（1/2/3，对着界面从左到右）、中文名。
+ * 认两种写法：英文名、数字（1/2，对着界面从左到右）、中文名。
  * 认不出来返回 undefined —— 调用方要把它当「没听懂」，别默默改成默认挡位。
+ * 以前还有一个 `steps`（分步骤），已经砍掉；旧会话日志里存着 steps 的，读到后
+ * 由 {@link viewOf} 统一按默认挡位处理，不会报错。
  */
 function parseMode(raw) {
   const text = String(raw ?? '').trim().toLowerCase()
   if (text === '') return undefined
   if (text === 'answer' || text === 'only' || text === '1' || text === '只回答') return MODE_ANSWER
-  if (text === 'steps' || text === 'step' || text === '2' || text === '分步骤') return MODE_STEPS
-  if (text === 'free' || text === '3' || text === '无限制') return MODE_FREE
+  if (text === 'free' || text === '2' || text === '无限制') return MODE_FREE
   return undefined
 }
 
@@ -210,7 +207,8 @@ export function apply(ctx) {  // 四个服务缺一个就整体不激活：挡�
       if (session === undefined || session === null) return DEFAULT_MODE
       const state = scoped.sessionProjections.stateOf(session, PROJECTION_KEY)
       if (state === undefined || state === null) return DEFAULT_MODE
-      return typeof state.mode === 'string' ? state.mode : DEFAULT_MODE
+      // 只认两档：旧会话日志里可能还存着已经砍掉的 'steps'，一律按默认挡位处理。
+      return state.mode === MODE_ANSWER ? MODE_ANSWER : DEFAULT_MODE
     }
 
     /** 读某个 agent 现在生效的挡位。 */
@@ -229,10 +227,7 @@ export function apply(ctx) {  // 四个服务缺一个就整体不激活：挡�
           interpolate: false,
           text: (context) => {
             if (context.agent === undefined) return ''
-            const mode = modeOfAgent(context.agent)
-            if (mode === MODE_ANSWER) return ANSWER_TEXT
-            if (mode === MODE_STEPS) return STEPS_TEXT
-            return ''
+            return modeOfAgent(context.agent) === MODE_ANSWER ? ANSWER_TEXT : ''
           },
         }),
       'step-fold: 挡位提示词',
@@ -250,7 +245,7 @@ export function apply(ctx) {  // 四个服务缺一个就整体不激活：挡�
           return (
             `当前挡位是「只回答」，${exec.name} 这类动手操作被挡住了：` +
             '不写文件、不跑命令、不派子代理。' +
-            '请先把要做的事讲清楚；要真开工，让用户把输入框上方的挡位切到「分步骤」或「无限制」。'
+            '请先把要做的事讲清楚；要真开工，让用户把输入框上方的挡位切到「无限制」。'
           )
         }),
       'step-fold: 只回答挡位拦截',
@@ -261,8 +256,8 @@ export function apply(ctx) {  // 四个服务缺一个就整体不激活：挡�
       () =>
         scoped.commands.register({
           name: COMMAND_NAME,
-          description: '切换协作挡位：只回答 / 分步骤 / 无限制',
-          input: { hint: 'answer | steps | free' },
+          description: '切换协作挡位：只回答 / 无限制',
+          input: { hint: 'answer | free' },
           handler: ({ rawInput }) => {
             const mode = parseMode(rawInput)
             if (mode === undefined) return { kind: 'error', text: USAGE }
@@ -285,5 +280,4 @@ export {
   viewOf,
   MODE_ANSWER,
   MODE_FREE,
-  MODE_STEPS,
 }

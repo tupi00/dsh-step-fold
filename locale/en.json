@@ -1,12 +1,10 @@
 {
   "title": "Step Fold",
-  "description": "Keep only the last 5 process steps per turn, with a bar to reveal the rest. Also adds collaboration modes above the composer: Answer only / Step by step / Unrestricted.",
+  "description": "Keep only the last 5 process steps per turn, with a bar to reveal the rest. Also adds collaboration modes above the composer: Answer only / Unrestricted.",
   "modes.aria": "Collaboration mode",
   "modes.answer": "Answer only",
-  "modes.steps": "Step by step",
   "modes.free": "Unrestricted",
   "modes.answer.title": "Read-only: read files, search, browse — no edits, no commands",
-  "modes.steps.title": "Announce 3–6 steps first, then carry them out; interrupt anytime",
   "modes.free.title": "No restriction, same as usual",
   "modes.failed": "Switch failed — click again"
 }

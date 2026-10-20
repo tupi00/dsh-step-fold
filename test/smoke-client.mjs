@@ -375,9 +375,10 @@ renderHook()
 const modeButton = (label) =>
   flatten(tree).find((node) => node.type === 'button' && node.props.children === label)
 
-assert.ok(modeButton('只回答') && modeButton('分步骤') && modeButton('无限制'), '三个挡位按钮不全')
+assert.ok(modeButton('只回答') && modeButton('无限制'), '挡位按钮不全')
 assert.equal(modeButton('无限制').props['aria-pressed'], 'true', '默认应该是无限制')
 assert.equal(modeButton('只回答').props['aria-pressed'], 'false')
+assert.equal(modeButton('分步骤'), undefined, '「分步骤」这一档已经砍掉，不该再出现在界面上')
 
 // 点「只回答」：应该发一条 /stepfold answer，并且先本地高亮（pending）
 modeButton('只回答').props.onClick()
@@ -388,25 +389,25 @@ assert.equal(executed[0].line, '/stepfold answer')
 // 所以只比长度。
 assert.equal(executed[0].attachments.length, 0, '命令不该带附件')
 assert.equal(modeButton('只回答').props['aria-pressed'], 'true', '点下去应该立刻高亮，不等投影')
-assert.equal(modeButton('只回答').props.disabled, true, '切换过程中三个按钮都该禁用')
+assert.equal(modeButton('只回答').props.disabled, true, '切换过程中所有按钮都该禁用')
 
 await flush()
 assert.equal(modeButton('只回答').props.disabled, false, '命令回来后要恢复可点')
 assert.equal(flatten(tree).some((node) => node.props.role === 'status'), false, '成功时不该有错误提示')
 
 // 命令失败：显示一行错误，且不把挡位改成失败的那个
-modeNow = 'answer'
+// （modeNow 还是 'free'，所以点「只回答」是一次真正的切换请求）
 executeReply = { ok: false, error: { message: 'boom', code: 'X' } }
-modeButton('分步骤').props.onClick()
+modeButton('只回答').props.onClick()
 await flush()
 const errorNode = flatten(tree).find((node) => node.props.role === 'status')
 assert.ok(errorNode, '失败时应该显示错误提示')
 assert.equal(errorNode.props.title, 'boom', '错误文案应该带上宿主给的原因')
-assert.equal(modeButton('只回答').props['aria-pressed'], 'true', '失败后挡位保持原样')
+assert.equal(modeButton('无限制').props['aria-pressed'], 'true', '失败后挡位保持原样')
 
 // 宿主不认识这个命令（host 半边没加载）
 executeReply = { ok: true, value: undefined }
-modeButton('分步骤').props.onClick()
+modeButton('只回答').props.onClick()
 await flush()
 assert.match(
   flatten(tree).find((node) => node.props.role === 'status').props.title,
