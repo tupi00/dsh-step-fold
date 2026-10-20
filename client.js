@@ -20,8 +20,10 @@
 window.__ModuleLoader__.load({
   id: '@local/step-fold',
   factory(require) {
-    // 本插件不画 React 组件（按钮是纯 DOM），但保留 require 的入口形状与其它客户端插件一致。
-    void require
+    // 步骤折叠按钮是纯 DOM（不经过 React），但输入框上方的挡位开关是一个真正的
+    // React 组件——宿主把 slot 里的东西当组件渲染，必须返回 React 元素。
+    const React = require('react')
+    const h = React.createElement
 
     /** 本插件自己的文案命名空间。 */
     const NS = 'step-fold'
@@ -87,6 +89,17 @@ window.__ModuleLoader__.load({
       `.${CLS}_btn{border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.28));background:var(--dsw-alias-bg-layer-1,rgba(127,127,127,.08));color:var(--dsw-alias-label-tertiary,#8a8f98);font:inherit;font-size:12px;line-height:1.4;padding:3px 12px;border-radius:999px;cursor:pointer}`,
       `.${CLS}_btn:hover{color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-l2,rgba(127,127,127,.4))}`,
       `.${CLS}_btn:focus-visible{outline:2px solid var(--dsw-alias-button-info-fill,#4183c4);outline-offset:1px}`,
+      // 挡位开关：输入框上方那一条。三个胶囊装在一个圆角壳里，当前挡位填成主色，
+      // 其余是透明的——和宿主自己的分段控件一个长相，一眼能看出现在选了哪个。
+      `.${CLS}_modes{display:flex;align-items:center;gap:8px;min-width:0}`,
+      `.${CLS}_modeGroup{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:999px;background:var(--dsw-alias-bg-layer-1,rgba(127,127,127,.08));border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}`,
+      `.${CLS}_mode{border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#8a8f98);font:inherit;font-size:12px;line-height:1;padding:4px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}`,
+      `.${CLS}_mode:hover{color:var(--dsw-alias-label-primary,inherit)}`,
+      `.${CLS}_mode[aria-pressed="true"]{background:var(--dsw-alias-button-info-fill,#4183c4);color:var(--dsw-alias-bg-base,#fff);cursor:default}`,
+      `.${CLS}_mode:focus-visible{outline:2px solid var(--dsw-alias-button-info-fill,#4183c4);outline-offset:1px}`,
+      `.${CLS}_mode:disabled{opacity:.6;cursor:progress}`,
+      `.${CLS}_modeHint{font-size:12px;line-height:1.4;color:var(--dsw-alias-label-tertiary,#8a8f98);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
+      `.${CLS}_modeError{font-size:12px;line-height:1.4;color:var(--dsw-alias-state-error-primary,#c0392b)}`,
     ].join('\n')
 
     /**
@@ -241,6 +254,15 @@ window.__ModuleLoader__.load({
       collapse: '只看最近 {keep} 步',
       titleShowAll: '展开这一轮的全部 {total} 步',
       titleCollapse: '收起，只显示最近 {keep} 步',
+      // 挡位开关（输入框上方那一排）
+      'modes.aria': '协作挡位',
+      'modes.answer': '只回答',
+      'modes.steps': '分步骤',
+      'modes.free': '无限制',
+      'modes.answer.title': '只读：能看文件、搜内容、开网页，不能改文件也不能跑命令',
+      'modes.steps.title': '动手前先报 3–6 条计划，然后一路做完，中途随时可以打断',
+      'modes.free.title': '不设限制，和平时一样',
+      'modes.failed': '没切成功，再点一次试试',
     }
 
     const en = {
@@ -248,6 +270,14 @@ window.__ModuleLoader__.load({
       collapse: 'Show last {keep} steps',
       titleShowAll: 'Expand all {total} steps in this turn',
       titleCollapse: 'Collapse to the last {keep} steps',
+      'modes.aria': 'Collaboration mode',
+      'modes.answer': 'Answer only',
+      'modes.steps': 'Step by step',
+      'modes.free': 'Unrestricted',
+      'modes.answer.title': 'Read-only: read files, search, browse — no edits, no commands',
+      'modes.steps.title': 'Announce 3–6 steps first, then carry them out; interrupt anytime',
+      'modes.free.title': 'No restriction, same as usual',
+      'modes.failed': 'Switch failed — click again',
     }
 
     /** DOM 文本没有宿主 t 可用，按页面语言挑字典（中文界面占绝大多数，默认中文）。 */
@@ -257,8 +287,130 @@ window.__ModuleLoader__.load({
       return lang.toLowerCase().startsWith('en') ? en : zh
     }
 
+    /**
+     * 取一条文案：优先问宿主的 t（它会读 locale/zh.json 那些文件），
+     * 拿不到就按页面语言回落本地字典。两边都没有就原样显示 key，绝不抛错。
+     */
+    function tr(t, key) {
+      if (typeof t === 'function') {
+        try {
+          const value = t(key)
+          if (typeof value === 'string' && value !== '' && value !== key) return value
+        } catch {
+          /* 宿主的 t 抛错就当没有，下面回落 */
+        }
+      }
+      const labels = currentLabels()
+      return labels[key] === undefined ? key : labels[key]
+    }
+
+    // ------------------------------------------------------------------
+    // 挡位开关：只回答 / 分步骤 / 无限制
+    // ------------------------------------------------------------------
+    /**
+     * 三个挡位，数组顺序就是界面上从左到右的顺序（1 号档 = 只回答）。
+     *
+     * 这三个名字要和 host 半边 index.js 里的 MODE_ANSWER / MODE_STEPS / MODE_FREE 一致；
+     * 点击时它们会被拼成 `/stepfold <名字>` 发给宿主。
+     */
+    const MODE_ORDER = ['answer', 'steps', 'free']
+
+    /** 宿主没给 useProjection 时的兜底 hook：永远返回 undefined，但占住 hook 位置。 */
+    function useNoProjection() {
+      return undefined
+    }
+
+    /**
+     * 输入框上方的挡位开关。
+     *
+     * 状态从宿主的投影读（就是 host 半边注册的那个 `stepfold`），点击则走
+     * `/stepfold <名字>` 命令 —— 界面和手敲命令是同一条路，不会出现两套逻辑。
+     *
+     * 为什么要 pending：命令是异步的，点下去到投影更新之间有几十毫秒。
+     * 不给反馈的话用户会以为没点上，连点三下就是三次切换。
+     */
+    function ModeSwitch(props) {
+      const pickProjection =
+        typeof props.useProjection === 'function' ? props.useProjection : useNoProjection
+      const state = pickProjection('stepfold')
+      const mode =
+        state !== undefined && state !== null && typeof state.mode === 'string' ? state.mode : 'free'
+      const [pending, setPending] = React.useState(null)
+      const [error, setError] = React.useState(null)
+      const aliveRef = React.useRef(true)
+      React.useEffect(() => {
+        aliveRef.current = true
+        return () => {
+          aliveRef.current = false
+        }
+      }, [])
+
+      // 宿主没把 setMode 注入进来（比如 host 半边没加载），就不画这个控件，
+      // 免得用户点了个永远没反应的按钮。
+      if (typeof props.setMode !== 'function') return null
+
+      const choose = (next) => {
+        if (next === (pending === null ? mode : pending)) return
+        setPending(next)
+        setError(null)
+        Promise.resolve(props.setMode(next)).then(
+          (failure) => {
+            if (!aliveRef.current) return
+            setPending(null)
+            setError(failure === undefined ? null : failure)
+          },
+          (reason) => {
+            if (!aliveRef.current) return
+            setPending(null)
+            setError(reason instanceof Error ? reason.message : String(reason))
+          },
+        )
+      }
+
+      const shown = pending === null ? mode : pending
+      return h(
+        'div',
+        { className: CLS + '_modes' },
+        h(
+          'div',
+          { className: CLS + '_modeGroup', role: 'group', 'aria-label': tr(props.t, 'modes.aria') },
+          MODE_ORDER.map((name) =>
+            h(
+              'button',
+              {
+                key: name,
+                type: 'button',
+                className: CLS + '_mode',
+                'aria-pressed': name === shown ? 'true' : 'false',
+                disabled: pending !== null,
+                title: tr(props.t, 'modes.' + name + '.title'),
+                onClick: () => choose(name),
+              },
+              tr(props.t, 'modes.' + name),
+            ),
+          ),
+        ),
+        error === null
+          ? null
+          : h(
+              'span',
+              { className: CLS + '_modeError', role: 'status', title: error },
+              tr(props.t, 'modes.failed'),
+            ),
+      )
+    }
+
+    /**
+     * 把错误文案压成一句人话：宿主给的是 `{ ok, error }`，可能是英文、
+     * 可能带错误码，直接亮给用户太吵。这里只截第一行。
+     */
+    function shortReason(reason) {
+      const text = String(reason === undefined ? '' : reason).split('\n')[0].trim()
+      return text === '' ? '' : text
+    }
+
     return {
-      inject: ['locale'],
+      inject: ['locale', 'slots'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'step-fold: dictionaries')
         ctx.effect(() => insertStyles(), 'step-fold: styles')
@@ -277,6 +429,38 @@ window.__ModuleLoader__.load({
               .forEach((root) => root.removeAttribute(ALL_ATTR))
           }
         }, 'step-fold: folding')
+
+        // 挡位开关：输入框上方那一排（和「目标」小卡片同一处）。
+        // 用 /stepfold 命令切挡位，而不是自己维护一份客户端状态——
+        // 挡位的真相在会话日志里，刷新页面、换会话都能读回来。
+        ctx.slots.inject('conversation.input.dock', () =>
+          ctx.slots.register(
+            {
+              name: 'conversation.input.dock',
+              id: 'step-fold-modes',
+              order: 40,
+              locale: NS,
+              inject: (sessionId) => ({
+                setMode: async (mode) => {
+                  if (typeof sessionId !== 'string' || sessionId === '') return '当前没有会话'
+                  let result
+                  try {
+                    result = await ctx.remote.commands.execute(sessionId, `/stepfold ${mode}`, [])
+                  } catch (reason) {
+                    // 命令通道本身没连上（宿主重启中、连接断了）
+                    return shortReason(reason) || '连不上宿主'
+                  }
+                  if (result === undefined || result === null) return '连不上宿主'
+                  if (!result.ok) return shortReason(result.error && result.error.message) || '命令被拒绝'
+                  if (result.value === undefined) return '宿主不认识这个挡位命令（host 半边没加载？）'
+                  if (result.value.kind === 'error') return shortReason(result.value.text) || '挡位命令出错了'
+                  return null
+                },
+              }),
+            },
+            ModeSwitch,
+          ),
+        )
       },
     }
   },

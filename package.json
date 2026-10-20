@@ -1,9 +1,9 @@
 {
   "name": "@local/step-fold",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "把一轮回答里的过程步骤默认收成最近 5 步，点按钮看全部",
+  "description": "过程步骤默认收成最近 5 步（点按钮看全部）+ 输入框上方的协作挡位：只回答 / 分步骤 / 无限制",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tupi00/dsh-step-fold.git"
@@ -17,14 +17,14 @@
   },
   "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg"],
   "scripts": {
-    "test": "node test/helpers.test.mjs"
+    "test": "node test/helpers.test.mjs && node test/host.test.mjs && node test/smoke-client.mjs"
   },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
       "platform": "web",
       "immediately": true,
-      "inject": []
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
     }
   }
 }

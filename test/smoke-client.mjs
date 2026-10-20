@@ -1,12 +1,13 @@
 /**
- * 烟测：在最小 DOM 桩子里加载 client.js 并跑一遍折叠逻辑。
+ * 烟测：在最小 DOM 桩子里加载 client.js 并跑一遍折叠逻辑 + 挡位开关。
  *
- * 它验证的是「插件加载会不会炸」+「折叠/展开/撤按钮的判定对不对」：
+ * 它验证的是「插件加载会不会炸」+「交互判定对不对」：
  *   1. apply 后样式插了、<html> 上了折叠类；
  *   2. 一组 11 步的步骤体长出横条，按钮文案是「显示全部 11 步（还有 6 步）」；
  *   3. 点一下 → 这组标记为展开、文案变「只看最近 5 步」；再点回去；
  *   4. 步骤变成 4 行后再同步一次 → 横条自己消失；
- *   5. 卸载时清干净（样式、横条、标记属性、html 类）。
+ *   5. 挡位开关注册到了 conversation.input.dock，点了会发 /stepfold 命令；
+ *   6. 卸载时清干净（样式、横条、标记属性、html 类）。
  *
  * 跑法：node test/smoke-client.mjs
  */
@@ -173,6 +174,53 @@ const windowStub = {
   cancelAnimationFrame() {},
 }
 
+// ---------------------------------------------------------------- 假 React
+// 只需要够组件跑起来：createElement 造描述对象，useState/useRef/useEffect 桩住。
+// 每次渲染前把 hook 游标归零（真实 React 也是按顺序复用同一批 hook 槽位）。
+let renderHook = null
+const hookStates = []
+let hookCursor = 0
+
+const ReactStub = {
+  createElement(type, props, ...children) {
+    const merged = { ...(props || {}) }
+    if (children.length === 1) merged.children = children[0]
+    else if (children.length > 1) merged.children = children
+    return { type, props: merged }
+  },
+  useState(initial) {
+    const index = hookCursor++
+    if (index >= hookStates.length) hookStates.push(initial)
+    const set = (next) => {
+      hookStates[index] = next
+      if (renderHook) renderHook()
+    }
+    return [hookStates[index], set]
+  },
+  useRef(value) {
+    const index = hookCursor++
+    if (index >= hookStates.length) hookStates.push({ current: value })
+    return hookStates[index]
+  },
+  useEffect(fn) {
+    hookCursor++
+    fn()
+  },
+}
+
+/** 把一个 React 描述树摊平成数组，方便按条件找节点。 */
+function flatten(node, out = []) {
+  if (node === null || node === undefined) return out
+  if (Array.isArray(node)) {
+    for (const item of node) flatten(item, out)
+    return out
+  }
+  if (typeof node !== 'object') return out
+  out.push(node)
+  if (node.props) flatten(node.props.children, out)
+  return out
+}
+
 let captured = null
 const sandbox = {
   window: windowStub,
@@ -187,10 +235,15 @@ sandbox.globalThis = sandbox
 const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
 vm.runInContext(source, vm.createContext(sandbox), { filename: 'client.js' })
 assert.ok(captured, '模块没有调用 window.__ModuleLoader__.load')
-const plugin = captured.factory(() => {
-  throw new Error('本插件不应该 require 任何客户端包')
+const requiredNames = []
+const plugin = captured.factory((name) => {
+  requiredNames.push(name)
+  if (name === 'react') return ReactStub
+  throw new Error(`预期之外的客户端依赖：${name}`)
 })
+assert.deepEqual(requiredNames, ['react'], '只允许 require react')
 assert.equal(plugin.inject.includes('locale'), true, 'inject 里应该有 locale')
+assert.equal(plugin.inject.includes('slots'), true, 'inject 里应该有 slots')
 
 // ---------------------------------------------------------------- 造一棵「宿主步骤体」树
 function makeGroup(stepCount) {
@@ -218,6 +271,9 @@ const small = makeGroup(4)
 
 // ---------------------------------------------------------------- apply
 const effects = []
+const executed = []
+let executeReply = { ok: true, value: { kind: 'success', text: '挡位已切到「只回答」。' } }
+let registeredSlot = null
 const ctx = {
   effect(fn, label) {
     const cleanup = fn()
@@ -228,6 +284,24 @@ const ctx = {
     register(namespace) {
       assert.equal(namespace, 'step-fold')
       return () => {}
+    },
+  },
+  slots: {
+    inject(name, register) {
+      assert.equal(name, 'conversation.input.dock')
+      return register()
+    },
+    register(definition, component) {
+      registeredSlot = { definition, component }
+      return () => {}
+    },
+  },
+  remote: {
+    commands: {
+      execute(sessionId, line, attachments) {
+        executed.push({ sessionId, line, attachments })
+        return Promise.resolve(executeReply)
+      },
     },
   },
 }
@@ -274,10 +348,76 @@ assert.equal(
   '步骤变少后横条没撤掉',
 )
 
+// ---------------------------------------------------------------- 挡位开关
+assert.ok(registeredSlot, '没有注册 conversation.input.dock 槽位')
+assert.equal(registeredSlot.definition.id, 'step-fold-modes')
+assert.equal(typeof registeredSlot.definition.inject, 'function', '槽位要声明 inject 拿 setMode')
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+let modeNow = 'free'
+const slotProps = {
+  sessionId: 's-1',
+  useProjection(key) {
+    assert.equal(key, 'stepfold', '控件要读 stepfold 投影')
+    return { mode: modeNow }
+  },
+  t: undefined,
+  ...registeredSlot.definition.inject('s-1'),
+}
+let tree = null
+renderHook = () => {
+  hookCursor = 0
+  tree = registeredSlot.component(slotProps)
+}
+renderHook()
+
+/** 在当前渲染树里找某个挡位按钮。 */
+const modeButton = (label) =>
+  flatten(tree).find((node) => node.type === 'button' && node.props.children === label)
+
+assert.ok(modeButton('只回答') && modeButton('分步骤') && modeButton('无限制'), '三个挡位按钮不全')
+assert.equal(modeButton('无限制').props['aria-pressed'], 'true', '默认应该是无限制')
+assert.equal(modeButton('只回答').props['aria-pressed'], 'false')
+
+// 点「只回答」：应该发一条 /stepfold answer，并且先本地高亮（pending）
+modeButton('只回答').props.onClick()
+assert.equal(executed.length, 1, '点击后应该调一次命令')
+assert.equal(executed[0].sessionId, 's-1')
+assert.equal(executed[0].line, '/stepfold answer')
+// 注意：attachments 是沙箱（vm）里造的数组，原型不同，deepEqual 会判不相等，
+// 所以只比长度。
+assert.equal(executed[0].attachments.length, 0, '命令不该带附件')
+assert.equal(modeButton('只回答').props['aria-pressed'], 'true', '点下去应该立刻高亮，不等投影')
+assert.equal(modeButton('只回答').props.disabled, true, '切换过程中三个按钮都该禁用')
+
+await flush()
+assert.equal(modeButton('只回答').props.disabled, false, '命令回来后要恢复可点')
+assert.equal(flatten(tree).some((node) => node.props.role === 'status'), false, '成功时不该有错误提示')
+
+// 命令失败：显示一行错误，且不把挡位改成失败的那个
+modeNow = 'answer'
+executeReply = { ok: false, error: { message: 'boom', code: 'X' } }
+modeButton('分步骤').props.onClick()
+await flush()
+const errorNode = flatten(tree).find((node) => node.props.role === 'status')
+assert.ok(errorNode, '失败时应该显示错误提示')
+assert.equal(errorNode.props.title, 'boom', '错误文案应该带上宿主给的原因')
+assert.equal(modeButton('只回答').props['aria-pressed'], 'true', '失败后挡位保持原样')
+
+// 宿主不认识这个命令（host 半边没加载）
+executeReply = { ok: true, value: undefined }
+modeButton('分步骤').props.onClick()
+await flush()
+assert.match(
+  flatten(tree).find((node) => node.props.role === 'status').props.title,
+  /host 半边没加载/,
+  '命令不存在时要给出能看懂的提示',
+)
+
 // ---------------------------------------------------------------- 卸载
 for (const { cleanup } of effects) if (typeof cleanup === 'function') cleanup()
 assert.equal(documentStub.documentElement.classList.contains('dshSF_fold'), false, '卸载后折叠类没去掉')
 assert.equal(documentStub.querySelectorAll('[data-dshsf-bar]').length, 0, '卸载后还有残留横条')
 assert.equal(documentStub.querySelectorAll('[data-dshsf-all]').length, 0, '卸载后还有残留展开标记')
 
-console.log('smoke ok: 折叠 / 展开 / 撤按钮 / 卸载 都符合预期')
+console.log('smoke ok: 折叠 / 展开 / 撤按钮 / 挡位开关 / 卸载 都符合预期')
