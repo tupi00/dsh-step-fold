@@ -73,6 +73,13 @@ window.__ModuleLoader__.load({
       if (expanded) return fill(labels.collapse, { keep })
       return fill(labels.showAll, { total, hidden: hiddenCount(total, keep) })
     }
+
+    /** 长文案截短，末尾补省略号。错误信息可能很长，界面上只亮开头一截。 */
+    function clip(text, max) {
+      const value = String(text === undefined || text === null ? '' : text)
+      if (value.length <= max) return value
+      return value.slice(0, max) + '…'
+    }
     // <<<PURE-HELPERS<<<
 
     /**
@@ -91,7 +98,9 @@ window.__ModuleLoader__.load({
       `.${CLS}_btn:focus-visible{outline:2px solid var(--dsw-alias-button-info-fill,#4183c4);outline-offset:1px}`,
       // 挡位开关：输入框上方那一条。三个胶囊装在一个圆角壳里，当前挡位填成主色，
       // 其余是透明的——和宿主自己的分段控件一个长相，一眼能看出现在选了哪个。
-      `.${CLS}_modes{display:flex;align-items:center;gap:8px;min-width:0}`,
+      // 整条横向居中：宿主把这个槽位铺满整个输入区宽度，不居中的话会贴到
+      // 窗口最左边，离输入框很远，看起来像掉了出去。
+      `.${CLS}_modes{display:flex;justify-content:center;align-items:center;gap:8px;min-width:0;padding:0 12px}`,
       `.${CLS}_modeGroup{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:999px;background:var(--dsw-alias-bg-layer-1,rgba(127,127,127,.08));border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}`,
       `.${CLS}_mode{border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#8a8f98);font:inherit;font-size:12px;line-height:1;padding:4px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}`,
       `.${CLS}_mode:hover{color:var(--dsw-alias-label-primary,inherit)}`,
@@ -395,7 +404,7 @@ window.__ModuleLoader__.load({
           : h(
               'span',
               { className: CLS + '_modeError', role: 'status', title: error },
-              tr(props.t, 'modes.failed'),
+              tr(props.t, 'modes.failed') + '：' + clip(error, 36),
             ),
       )
     }
@@ -413,7 +422,10 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['locale', 'slots'],
+      // 'remote' 和 'remote.commands' 必须声明：命令通道是宿主的远程服务，
+      // 不声明就直接拿 ctx.remote.commands 会拿到 undefined，点按钮只会得到一句
+      // 「没切成功」。声明之后宿主会先把服务准备好再调 apply。
+      inject: ['locale', 'slots', 'remote', 'remote.commands'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'step-fold: dictionaries')
         ctx.effect(() => insertStyles(), 'step-fold: styles')

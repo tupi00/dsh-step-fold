@@ -13,8 +13,8 @@ const end = source.indexOf('// <<<PURE-HELPERS<<<')
 assert.ok(start >= 0 && end > start, 'client.js 里找不到 PURE-HELPERS 区标记')
 
 const body = source.slice(start, end)
-const helpers = new Function(`${body}; return { KEEP_STEPS, fill, hiddenCount, needsFold, barLabel }`)()
-const { KEEP_STEPS, fill, hiddenCount, needsFold, barLabel } = helpers
+const helpers = new Function(`${body}; return { KEEP_STEPS, fill, hiddenCount, needsFold, barLabel, clip }`)()
+const { KEEP_STEPS, fill, hiddenCount, needsFold, barLabel, clip } = helpers
 
 const zh = {
   showAll: '显示全部 {total} 步（还有 {hidden} 步）',
@@ -54,4 +54,12 @@ assert.equal(barLabel(10, true, zh, 8), '只看最近 8 步')
 // KEEP_STEPS 常量必须是 5（用户明确要 5 步）
 assert.equal(KEEP_STEPS, 5)
 
-console.log('helpers ok: ' + 15 + ' passed')
+// clip：短的原样返回，长的截断并补省略号
+assert.equal(clip('短', 10), '短')
+assert.equal(clip('正好七个字', 5), '正好七个字') // 等于上限时不截
+assert.equal(clip('一二三四五六七八九十', 4), '一二三四…')
+assert.equal(clip('', 4), '')
+assert.equal(clip(undefined, 4), '')
+assert.equal(clip(null, 4), '')
+
+console.log('helpers ok: ' + 21 + ' passed')
