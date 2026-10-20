@@ -2,7 +2,7 @@
 
 给「接下这个仓库的人」看。使用者看 [README.md](./README.md)，这里记的是：现在什么状态、为什么这么写、宿主改版时先查哪里、下一步该干什么。
 
-最后更新：2026-10-20 · 版本 **1.1.0** · HEAD `a8b548b`
+最后更新：2026-10-20 · 版本 **1.1.1** · HEAD `37554dc`
 
 ---
 
@@ -171,7 +171,7 @@ html.dshSF_fold [data-step-process]:not([data-dshsf-all])
 
 ## 9. 发布流程
 
-1. 改 `package.json` 的 `version`（当前 1.1.0）。
+1. 改 `package.json` 的 `version`（当前 1.1.1）。
 2. 同步 README 的「行为细节」「已知限制」两节。
 3. 跑第 1 节那四条命令，全绿。
 4. `git commit` → `git tag vX.Y.Z` → 推到 `origin`（`git@github.com:tupi00/dsh-step-fold.git`），发 GitHub Release。
