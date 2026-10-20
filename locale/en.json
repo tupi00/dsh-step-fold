@@ -1,0 +1,4 @@
+{
+  "title": "Step Fold",
+  "description": "Keep only the last 5 process steps per turn, with a bar to reveal the rest."
+}

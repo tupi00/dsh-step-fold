@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE · 步骤折叠长什么样</title>
+<!--
+  ⚠️ 这是原型，不是插件代码。用完可以整个删掉。
+  目的：在装插件、重启 DSH 之前，先回答「折叠长什么样、按钮放哪、叫什么」。
+  行为已定（所有轮次都折、只留最近 5 步、点开看全部），这里只比外观。
+  切换变体：底部浮条，或地址栏 ?v=1..4
+-->
+<style>
+  :root{
+    --bg:#0d121b; --panel:#141b26; --line:rgba(127,127,127,.18);
+    --text:#e6e8eb; --dim:#8a8f98; --brand:#4d6bfe;
+    --radius:8px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.55 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    padding:24px 16px 120px;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  .proto-badge{
+    display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:#f0b429;border:1px dashed #f0b429;border-radius:4px;padding:1px 6px;margin-bottom:14px;
+  }
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:12.5px;margin:0 0 22px}
+  .turn{margin:0 0 22px}
+  .user-msg{
+    background:#1b2431;border:1px solid var(--line);border-radius:var(--radius);
+    padding:8px 12px;margin:0 0 12px;color:#c9ced6;
+  }
+  /* ---------- 步骤体（模拟宿主 [data-step-process]） ---------- */
+  .steps{border-left:2px solid var(--line);padding-left:0;margin:0 0 12px}
+  .steps-head{
+    display:flex;align-items:center;gap:6px;color:var(--dim);font-size:13px;
+    cursor:pointer;padding:2px 0 6px;user-select:none;
+  }
+  /* 步骤体始终可见：折叠只藏「较早的行」，不藏整个组 */
+  .steps-body{display:flex;flex-direction:column}
+  .step{
+    display:flex;gap:8px;align-items:baseline;color:var(--dim);font-size:13px;
+    padding:1px 0 1px 10px;
+  }
+  .step .tag{color:#6b7280;flex:none;width:38px;font-size:11.5px}
+  .step .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .step.answer{color:var(--text)}
+  .answer-body{color:var(--text);padding:0 0 0 2px;white-space:pre-wrap}
+
+  /* ---------- 四个变体 ---------- */
+  /* v1 底部文字按钮 */
+  .v1 .fold-bar{display:flex;padding:4px 0 2px}
+  .v1 .fold-btn{
+    border:0;background:none;color:var(--dim);font:inherit;font-size:12.5px;
+    padding:3px 8px;border-radius:var(--radius);cursor:pointer;
+  }
+  .v1 .fold-btn:hover{background:rgba(127,127,127,.12);color:var(--text)}
+
+  /* v2 底部横条 */
+  .v2 .fold-wrap{display:flex;justify-content:center;border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
+  .v2 .fold-btn{
+    border:1px solid var(--line);background:var(--panel);color:var(--dim);
+    font:inherit;font-size:12px;padding:3px 12px;border-radius:999px;cursor:pointer;
+  }
+  .v2 .fold-btn:hover{color:var(--text);border-color:rgba(127,127,127,.4)}
+
+  /* v3 头部 chip */
+  .v3 .steps-head{width:100%}
+  .v3 .chip{
+    margin-left:auto;border:1px solid var(--line);background:transparent;color:var(--dim);
+    font:inherit;font-size:11.5px;line-height:1;padding:3px 8px;border-radius:999px;cursor:pointer;
+  }
+  .v3 .chip:hover{color:var(--text)}
+
+  /* v4 悬浮胶囊 */
+  .v4 .fold-wrap{position:relative}
+  .v4 .fold-btn{
+    display:block;margin:6px auto 0;border:1px solid rgba(77,107,254,.45);
+    background:rgba(77,107,254,.14);color:#aab6ff;font:inherit;font-size:12px;
+    padding:4px 14px;border-radius:999px;cursor:pointer;
+    box-shadow:0 2px 10px rgba(0,0,0,.35);
+  }
+  .v4 .fold-btn:hover{background:rgba(77,107,254,.24);color:#c9d1ff}
+
+  .hidden-step{display:none !important}
+
+  /* ---------- 底部切换条 ---------- */
+  .switcher{
+    position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
+    display:flex;gap:6px;align-items:center;
+    background:#182130;border:1px solid var(--line);border-radius:12px;
+    padding:8px 10px;box-shadow:0 8px 28px rgba(0,0,0,.45);z-index:9;
+  }
+  .switcher .lbl{color:var(--dim);font-size:12px;margin-right:2px}
+  .switcher button{
+    border:1px solid transparent;background:transparent;color:var(--dim);
+    font:inherit;font-size:12.5px;padding:4px 10px;border-radius:8px;cursor:pointer;
+  }
+  .switcher button.on{background:var(--brand);color:#fff}
+  .switcher button:hover:not(.on){background:rgba(127,127,127,.12);color:var(--text)}
+  /* ---------- 状态面板 ---------- */
+  .state{
+    margin-top:26px;border:1px dashed var(--line);border-radius:var(--radius);
+    padding:10px 12px;color:var(--dim);font:12px/1.5 Consolas,monospace;white-space:pre-wrap;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="proto-badge">prototype · 用完可删</span>
+  <h1>过程步骤：只留最近 5 步，点开看全部</h1>
+  <p class="sub">这是假的聊天流，不连 DSH。四套外观，你挑一个，我按它写插件。按钮文案和位置都还没定——点一下看看手感。</p>
+
+  <div id="app"></div>
+
+  <div class="state" id="state"></div>
+</div>
+
+<div class="switcher">
+  <span class="lbl">外观</span>
+  <button data-v="1">1 底部文字</button>
+  <button data-v="2">2 底部横条</button>
+  <button data-v="3">3 头部计数</button>
+  <button data-v="4">4 悬浮胶囊</button>
+</div>
+
+<script>
+/* ============ 假数据：模拟三轮对话 ============ */
+const TURNS = [
+  {
+    user: '把这个仓库里所有 .ps1 脚本里的硬编码路径找出来',
+    steps: [
+      ['读取', '列出 F:\\DSH产出 下的 .ps1 文件'],
+      ['思考', '先看目录结构再决定搜什么'],
+      ['搜索', 'grep -n "F:\\\\" **/*.ps1'],
+      ['读取', 'scripts/fix-acl.ps1'],
+      ['读取', 'scripts/backup.ps1'],
+      ['运行', 'dotnet build 试一下'],
+      ['读取', 'README.md'],
+      ['思考', '发现两处硬编码，先确认是不是有意为之'],
+      ['读取', 'DEVLOG.md'],
+      ['搜索', 'grep -n "C:\\\\Users" **/*.ps1'],
+      ['思考', '汇总成表格'],
+    ],
+    answer: '共找到 3 处硬编码路径，其中 2 处应该改成相对路径，1 处（备份脚本）是刻意的。',
+  },
+  {
+    user: '那就改吧',
+    steps: [
+      ['读取', 'scripts/fix-acl.ps1'],
+      ['思考', '改成 $PSScriptRoot 相对路径'],
+      ['编辑', 'scripts/fix-acl.ps1'],
+      ['运行', 'pwsh -File scripts/fix-acl.ps1 -WhatIf'],
+      ['读取', 'scripts/backup.ps1'],
+      ['编辑', 'scripts/backup.ps1'],
+      ['运行', 'pwsh -File scripts/backup.ps1 -WhatIf'],
+    ],
+    answer: '改完两处，都用 -WhatIf 预演通过。备份脚本里的 C:\\Users\\tupi 保留，因为它是日志目录的固定位置。',
+  },
+  {
+    user: '跑一下测试',
+    steps: [
+      ['运行', 'node test/helpers.test.mjs'],
+      ['读取', 'test/helpers.test.mjs'],
+      ['运行', 'node test/host.test.mjs'],
+      ['思考', '两个都过'],
+    ],
+    answer: '两个测试文件全绿（8 + 10 条断言）。',
+  },
+];
+
+/* ============ 常量 ============ */
+const KEEP = 5;
+const VARIANTS = {
+  1: { name: '底部文字按钮', render: barText },
+  2: { name: '底部横条 + 渐隐', render: barSolid },
+  3: { name: '头部计数 chip', render: chipHeader },
+  4: { name: '悬浮胶囊', render: pillFloat },
+};
+
+/* ============ 工具 ============ */
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+function totalOf(turn) { return turn.steps.length; }
+function expandedKey(i) { return 'expanded:' + i; }
+
+function labelFor(total, expanded) {
+  if (expanded) return '只看最近 ' + KEEP + ' 步';
+  const hidden = Math.max(0, total - KEEP);
+  return '显示全部 ' + total + ' 步（还有 ' + hidden + ' 步）';
+}
+
+/* ============ 各变体的按钮渲染 ============ */
+function barText(ctx) {                       // v1
+  const bar = el('div', 'fold-bar');
+  const btn = el('button', 'fold-btn');
+  btn.type = 'button';
+  btn.addEventListener('click', ctx.toggle);
+  bar.append(btn);
+  return { node: bar, btn };
+}
+function barSolid(ctx) {                      // v2
+  const wrap = el('div', 'fold-wrap');
+  const bar = el('div', 'fold-bar');
+  const btn = el('button', 'fold-btn');
+  btn.type = 'button';
+  btn.addEventListener('click', ctx.toggle);
+  bar.append(btn);
+  wrap.append(bar);
+  return { node: wrap, btn };
+}
+function chipHeader(ctx) {                    // v3
+  const btn = el('button', 'chip');
+  btn.type = 'button';
+  btn.addEventListener('click', (e) => { e.stopPropagation(); ctx.toggle(); });
+  ctx.head.append(btn);
+  return { node: null, btn };
+}
+function pillFloat(ctx) {                     // v4
+  const wrap = el('div', 'fold-wrap');
+  const btn = el('button', 'fold-btn');
+  btn.type = 'button';
+  btn.addEventListener('click', ctx.toggle);
+  wrap.append(btn);
+  return { node: wrap, btn };
+}
+
+/* ============ 渲染一轮 ============ */
+function renderTurn(turn, index, variant) {
+  const expanded = state.expanded.has(index);
+  const total = totalOf(turn);
+  const showButton = total > KEEP;
+
+  const root = el('div', 'turn v' + variant);
+
+  // 用户消息
+  root.append(el('div', 'user-msg', turn.user));
+
+  // 步骤体
+  const steps = el('div', 'steps' + (expanded ? ' open' : ''));
+  const head = el('div', 'steps-head');
+  head.append(el('span', 'chev', '▶'));
+  head.append(el('span', null, '过程 · ' + total + ' 步'));
+  steps.append(head);
+
+  const body = el('div', 'steps-body');
+  turn.steps.forEach(([tag, txt]) => {
+    const row = el('div', 'step');
+    row.append(el('span', 'tag', tag));
+    row.append(el('span', 'txt', txt));
+    body.append(row);
+  });
+  steps.append(body);
+  root.append(steps);
+
+  // 折叠控制
+  let ui = null;
+  if (showButton) {
+    const ctx = {
+      head,
+      expanded,
+      toggle() {
+        if (state.expanded.has(index)) state.expanded.delete(index);
+        else state.expanded.add(index);
+        render();
+      },
+    };
+    const v = VARIANTS[variant];
+    ui = v.render(ctx);
+    if (ui.node) root.append(ui.node);
+  }
+
+  // 答案
+  root.append(el('div', 'answer-body', turn.answer));
+
+  // 折叠：未展开时，只留最后 KEEP 行
+  if (!expanded && total > KEEP) {
+    [...body.children].slice(0, total - KEEP).forEach((n) => n.classList.add('hidden-step'));
+  }
+
+  // 按钮文案
+  if (ui && ui.btn) {
+    ui.btn.textContent = variant === 3
+      ? (expanded ? '收起' : KEEP + '/' + total)
+      : labelFor(total, expanded);
+    ui.btn.title = expanded ? '收起，只显示最近 ' + KEEP + ' 步' : '展开这一轮的全部步骤';
+    ui.btn.setAttribute('aria-expanded', String(expanded));
+  }
+
+  return root;
+}
+
+/* ============ 状态与主渲染 ============ */
+const state = {
+  variant: 1,
+  expanded: new Set(),
+};
+
+function currentVariant() {
+  const p = new URLSearchParams(location.search).get('v');
+  const n = Number(p);
+  return VARIANTS[n] ? n : 1;
+}
+
+function render() {
+  document.querySelectorAll('.switcher button').forEach((b) => {
+    b.classList.toggle('on', Number(b.dataset.v) === state.variant);
+  });
+
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  TURNS.forEach((t, i) => app.append(renderTurn(t, i, state.variant)));
+
+  // 状态面板：把内部状态摊开，方便你看懂点了什么
+  const lines = [];
+  lines.push('variant      = ' + state.variant + ' (' + VARIANTS[state.variant].name + ')');
+  lines.push('KEEP_STEPS   = ' + KEEP);
+  lines.push('expanded     = [' + [...state.expanded].join(', ') + ']');
+  TURNS.forEach((t, i) => {
+    const total = totalOf(t);
+    lines.push(
+      'turn ' + i + '     : total=' + total +
+      ' hidden=' + (state.expanded.has(i) ? 0 : Math.max(0, total - KEEP)) +
+      ' button=' + (total > KEEP ? 'yes' : 'no')
+    );
+  });
+  document.getElementById('state').textContent = lines.join('\n');
+}
+
+document.querySelectorAll('.switcher button').forEach((b) => {
+  b.addEventListener('click', () => {
+    const url = new URL(location.href);
+    url.searchParams.set('v', b.dataset.v);
+    history.replaceState(null, '', url);
+    state.variant = Number(b.dataset.v);
+    render();
+  });
+});
+
+state.variant = currentVariant();
+render();
+</script>
+</body>
+</html>
