@@ -1,6 +1,6 @@
 {
   "name": "@local/step-fold",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "description": "过程步骤默认收成最近 5 步（点按钮看全部）+ 输入框上方的协作挡位：只回答 / 分步骤 / 无限制",

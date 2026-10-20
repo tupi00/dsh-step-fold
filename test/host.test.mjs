@@ -201,6 +201,15 @@ mode.value = { mode: MODE_STEPS, running: null }
 assert.match(section.text({ agent }), /分步骤/)
 assert.match(section.text({ agent }), /3–6 件事/)
 
+// 分步骤还要求三件事，少一件模型就会退回「闷头做完」的老样子
+const stepsText = section.text({ agent })
+assert.match(stepsText, /技能/, '要提醒模型先找匹配的技能')
+assert.match(stepsText, /不要硬套/, '没有匹配的技能时不许硬套，否则挪个按钮也会去翻 code-review')
+assert.match(stepsText, /顺带发现/, '顺手发现的问题要先问，不能自己扩大范围')
+assert.match(stepsText, /最多提一条/, '「顺带发现」必须有上限，否则每轮开头变成体检报告')
+assert.match(stepsText, /调整：/, '计划变了要先说一句再继续')
+assert.match(stepsText, /不能撤销的/, '不可撤销的动作仍然要先停下问')
+
 // guard：只回答挡位拦动手工具，读工具放行
 const guard = registered.guards[0]
 const exec = (name) => ({ name, agent, callId: 'call-1', arguments: {} })
