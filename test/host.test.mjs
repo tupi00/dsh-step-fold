@@ -15,6 +15,7 @@ import {
   viewOf,
   MODE_ANSWER,
   MODE_FREE,
+  MODE_STEPS,
 } from '../index.js'
 
 // ---------------------------------------------------------------- parseMode
@@ -24,16 +25,14 @@ assert.equal(parseMode('  only '), MODE_ANSWER)
 assert.equal(parseMode('只回答'), MODE_ANSWER)
 assert.equal(parseMode('1'), MODE_ANSWER)
 
-assert.equal(parseMode('free'), MODE_FREE)
-assert.equal(parseMode('2'), MODE_FREE)
-assert.equal(parseMode('无限制'), MODE_FREE)
+assert.equal(parseMode('steps'), MODE_STEPS)
+assert.equal(parseMode('step'), MODE_STEPS)
+assert.equal(parseMode('2'), MODE_STEPS)
+assert.equal(parseMode('分步骤'), MODE_STEPS)
 
-// 「分步骤」这一档已经砍掉：旧命令 /stepfold steps 必须认不出来，
-// 这样命令处理器会回用法提示，而不是静默改成某个挡位。
-assert.equal(parseMode('steps'), undefined)
-assert.equal(parseMode('step'), undefined)
-assert.equal(parseMode('3'), undefined)
-assert.equal(parseMode('分步骤'), undefined)
+assert.equal(parseMode('free'), MODE_FREE)
+assert.equal(parseMode('3'), MODE_FREE)
+assert.equal(parseMode('无限制'), MODE_FREE)
 
 // 认不出来就是 undefined —— 调用方要报错，不能默默当默认挡位
 assert.equal(parseMode(''), undefined)
@@ -177,20 +176,15 @@ assert.equal(registered.sections[0].interpolate, false, '必须关掉插值，�
 assert.equal(registered.guards.length, 1)
 assert.equal(registered.commands.length, 1)
 assert.equal(registered.commands[0].name, 'stepfold')
-assert.equal(registered.commands[0].input.hint, 'answer | free')
+assert.equal(registered.commands[0].input.hint, 'answer | steps | free')
 
 // 命令处理器：认参数给成功回执，不认就给用法
-const ok = registered.commands[0].handler({ rawInput: ' free ' })
+const ok = registered.commands[0].handler({ rawInput: ' steps ' })
 assert.equal(ok.kind, 'success')
-assert.match(ok.text, /无限制/)
+assert.match(ok.text, /分步骤/)
 const bad = registered.commands[0].handler({ rawInput: 'whatever' })
 assert.equal(bad.kind, 'error')
 assert.match(bad.text, /用法/)
-
-// 已经砍掉的 /stepfold steps 要落到「用法」这条路上，不能静默改挡位
-const gone = registered.commands[0].handler({ rawInput: 'steps' })
-assert.equal(gone.kind, 'error')
-assert.match(gone.text, /用法/)
 
 // 提示词段：按挡位给文本，默认（无限制）必须是空串
 const section = registered.sections[0]
@@ -203,9 +197,9 @@ mode.value = { mode: MODE_ANSWER, running: null }
 assert.match(section.text({ agent }), /只回答/)
 assert.match(section.text({ agent }), /不要动手/)
 
-// 旧会话日志里存着的 'steps'（已砍掉的挡位）要按默认挡位处理：不注入任何提示词
-mode.value = { mode: 'steps', running: null }
-assert.equal(section.text({ agent }), '', '已砍掉的分步骤挡位应当按无限制处理')
+mode.value = { mode: MODE_STEPS, running: null }
+assert.match(section.text({ agent }), /分步骤/)
+assert.match(section.text({ agent }), /3–6 件事/)
 
 // guard：只回答挡位拦动手工具，读工具放行
 const guard = registered.guards[0]
@@ -218,6 +212,8 @@ assert.equal(guard(exec('read')), undefined, '只回答挡位要放行读文件'
 assert.equal(guard(exec('grep')), undefined, '只回答挡位要放行搜索')
 
 // 其它挡位一律不拦
+mode.value = { mode: MODE_STEPS, running: null }
+assert.equal(guard(exec('write')), undefined, '分步骤挡位不拦工具')
 mode.value = { mode: MODE_FREE, running: null }
 assert.equal(guard(exec('write')), undefined, '无限制挡位不拦工具')
 

@@ -266,8 +266,10 @@ window.__ModuleLoader__.load({
       // 挡位开关（输入框上方那一排）
       'modes.aria': '协作挡位',
       'modes.answer': '只回答',
+      'modes.steps': '分步骤',
       'modes.free': '无限制',
       'modes.answer.title': '只读：能看文件、搜内容、开网页，不能改文件也不能跑命令',
+      'modes.steps.title': '动手前先报 3–6 条计划，然后一路做完，中途随时可以打断',
       'modes.free.title': '不设限制，和平时一样',
       'modes.failed': '没切成功，再点一次试试',
     }
@@ -279,8 +281,10 @@ window.__ModuleLoader__.load({
       titleCollapse: 'Collapse to the last {keep} steps',
       'modes.aria': 'Collaboration mode',
       'modes.answer': 'Answer only',
+      'modes.steps': 'Step by step',
       'modes.free': 'Unrestricted',
       'modes.answer.title': 'Read-only: read files, search, browse — no edits, no commands',
+      'modes.steps.title': 'Announce 3–6 steps first, then carry them out; interrupt anytime',
       'modes.free.title': 'No restriction, same as usual',
       'modes.failed': 'Switch failed — click again',
     }
@@ -310,16 +314,15 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------------
-    // 挡位开关：只回答 / 无限制
+    // 挡位开关：只回答 / 分步骤 / 无限制
     // ------------------------------------------------------------------
     /**
-     * 现在的两个挡位，数组顺序就是界面上从左到右的顺序（1 号档 = 只回答）。
+     * 三个挡位，数组顺序就是界面上从左到右的顺序（1 号档 = 只回答）。
      *
-     * 这两个名字要和 host 半边 index.js 里的 MODE_ANSWER / MODE_FREE 一致；
+     * 这三个名字要和 host 半边 index.js 里的 MODE_ANSWER / MODE_STEPS / MODE_FREE 一致；
      * 点击时它们会被拼成 `/stepfold <名字>` 发给宿主。
-     * 中间那档「分步骤」已经砍掉，想法记在 docs/TODO.md 里。
      */
-    const MODE_ORDER = ['answer', 'free']
+    const MODE_ORDER = ['answer', 'steps', 'free']
 
     /** 宿主没给 useProjection 时的兜底 hook：永远返回 undefined，但占住 hook 位置。 */
     function useNoProjection() {

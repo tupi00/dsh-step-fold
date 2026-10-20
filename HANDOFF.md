@@ -2,13 +2,13 @@
 
 给「接下这个仓库的人」看。使用者看 [README.md](./README.md)，这里记的是：现在什么状态、为什么这么写、宿主改版时先查哪里、下一步该干什么。
 
-最后更新：2026-10-20 · 版本 **1.2.0** · HEAD 待推送
+最后更新：2026-10-20 · 版本 **1.1.1** · HEAD `37554dc`
 
 ---
 
 ## 1. 一句话现状
 
-`@local/step-fold`：DSH Web 界面插件，两件事——**步骤折叠**（每组过程步骤默认只留最近 5 步，底部补横条点开看全部）+ **协作挡位**（输入框上方一排开关：只回答 / 无限制）。
+`@local/step-fold`：DSH Web 界面插件，两件事——**步骤折叠**（每组过程步骤默认只留最近 5 步，底部补横条点开看全部）+ **协作挡位**（输入框上方一排开关：只回答 / 分步骤 / 无限制）。
 
 **能跑，测试全绿**：
 
@@ -102,9 +102,8 @@ html.dshSF_fold [data-step-process]:not([data-dshsf-all])
 | 挡位 | 宿主端行为 |
 |---|---|
 | `answer` 只回答 | guard 拦 `BLOCKED_TOOLS` 表里的工具；提示词段注入「只读，不要动手，把该讲的讲清楚」 |
+| `steps` 分步骤 | 不拦任何工具；提示词段注入「开头先报 3–6 条计划（每条一句话、带文件或模块名、不展开代码），然后一路做完」 |
 | `free` 无限制 | 提示词段返回空串（等于不注入），guard 放行 |
-
-中间那档 `steps`（分步骤）在 1.2.0 砍掉了，原因见 `CHANGELOG.md` 和 `docs/TODO.md`。**旧会话日志里存着 `steps` 的，`modeOf()` 会归一到默认挡位**，所以不用为它写迁移。
 
 `BLOCKED_TOOLS` 是一张**白名单式的黑名单**：`write` / `edit` / `pwsh` / `subagent` / `workflow` / `workflow-run` / `apply_patch` / `create_goal`。宿主以后新增的动手类工具默认**放行**——这是已知缺口，加工具时记得同步（见第 8 节）。
 
@@ -158,9 +157,8 @@ html.dshSF_fold [data-step-process]:not([data-dshsf-all])
 
 **P1 · 挡位功能的缺口**
 - [ ] `BLOCKED_TOOLS` 是按工具名硬编码的。宿主新增动手类工具（比如以后有 `move`/`delete`）默认会**放行**。更稳的做法是反过来：只放行读类前缀（`read`/`get_`/`list_`/`search`/`inspect_`/`web_`/`glob`/`grep`）。**改之前先跑 `test/host.test.mjs`**，那边断言了当前两张表。
-- [ ] 决策时讨论过、这一版**没做**的：发含「开工」的消息自动切「无限制」。需要在轮次边界写会话状态，得先确认 append 契约（能不能写 `ignorable` 事件）。
+- [ ] 决策时讨论过、这一版**没做**的两条：①一轮做完自动跳回「分步骤」；②发含「开工」的消息自动切「无限制」。两者都需要在轮次边界写会话状态，得先确认 append 契约（能不能写 `ignorable` 事件）。
 - [ ] 挡位只在**当前会话**生效；跨会话没有「全局默认挡位」设置。
-- [ ] **中间那档（分步骤）怎么设计**——1.2.0 砍掉了，想法与失败原因记在 `F:\DSH产出\docs\TODO.md` 的「中间档位」条下。重新做之前先读那一节。
 
 **P2 · 小问题**
 - [ ] `KEEP_STEPS = 5` 写死；改它要同时改 CSS 里的 `nth-last-child`（代码里是 `KEEP_STEPS + 1` 拼的，别手改数字）。
@@ -173,7 +171,7 @@ html.dshSF_fold [data-step-process]:not([data-dshsf-all])
 
 ## 9. 发布流程
 
-1. 改 `package.json` 的 `version`（当前 1.2.0）。
+1. 改 `package.json` 的 `version`（当前 1.1.1）。
 2. 同步 README 的「行为细节」「已知限制」两节。
 3. 跑第 1 节那四条命令，全绿。
 4. `git commit` → `git tag vX.Y.Z` → 推到 `origin`（`git@github.com:tupi00/dsh-step-fold.git`），发 GitHub Release。
