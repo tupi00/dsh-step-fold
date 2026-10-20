@@ -94,9 +94,12 @@ node --check client.js           # 语法
 node test/helpers.test.mjs       # 客户端纯函数单测（15 条）
 node test/host.test.mjs          # 宿主半边单测（28 条）：认挡位 / 折叠日志 / 拦工具 / 提示词
 node test/smoke-client.mjs       # 假 DOM 烟测：折叠 / 展开 / 撤按钮 / 挡位开关 / 卸载
+node test/runtime-probe.mjs      # 真机自检（可选，需要本机有 dsh 运行时）
 ```
 
 `test/smoke-client.mjs` 用最小 DOM + 最小 React 桩把 `client.js` 跑一遍，验证的是「插件加载不会炸」和判定逻辑，不是视觉效果——视觉效果只能在浏览器里看。
+
+`test/runtime-probe.mjs` 更硬一层：把真实的 dsh 服务（`systemPrompt` / `sessionProjections` / `tools` / `commands`）装进一个空 cordis 上下文，再挂上本插件，确认提示词段、命令、守卫**真的进了宿主的登记表**——这类「API 用错了」的错误单测看不出来，只会等你重启 DSH 时炸。
 
 ## 已知限制
 

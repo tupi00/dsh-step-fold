@@ -17,7 +17,10 @@
 | 客户端纯函数 | `node test/helpers.test.mjs` | `helpers ok: 15 passed` |
 | 宿主半边 | `node test/host.test.mjs` | `host ok: 28 passed` |
 | 假 DOM 烟测 | `node test/smoke-client.mjs` | `smoke ok: 折叠 / 展开 / 撤按钮 / 挡位开关 / 卸载 都符合预期` |
+| 真机自检（可选） | `node test/runtime-probe.mjs` | `runtime ok: 插件在真实 cordis 上加载成功，提示词段 / 命令 / 守卫都进了登记表` |
 | 语法 | `node --check index.js` / `client.js` | 通过 |
+
+`runtime-probe.mjs` 用本机 `E:/npm/node_modules/@deepseek-ai/dsh` 的真实服务跑（可用 `DSH_RUNTIME` 改路径），所以**没放进 `npm test`**——换台机器就跑不了。它的价值是抓「API 用错了」这类单测看不见、只在重启时才炸的错误。
 
 烟测和单测验的是「加载不炸 + 判定对」，**视觉效果只能在浏览器里看**（见第 6 节）。
 
